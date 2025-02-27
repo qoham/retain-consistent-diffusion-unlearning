@@ -368,8 +368,8 @@ def get_local_hf_dataset(
     unlearn_data_dirs: List[str],
     retain_data_dir: str,
     unlearn_concepts: List[str],
-    retain_to_unlearn_ratio: float,  # 保留数据集是遗忘数据集的多少倍
-    unlearn_data_copy_multiple=1,  # 所有遗忘数据集复制多少次
+    retain_to_unlearn_ratio: float,
+    unlearn_data_copy_multiple=1,
 ) -> datasets.Dataset:
     unlearn_dataset = concatenate_datasets([get_dataset(unlearn_data_dir) for unlearn_data_dir in unlearn_data_dirs] * unlearn_data_copy_multiple)
     retain_dataset = get_dataset(retain_data_dir, max_num_images=math.ceil(len(unlearn_dataset) * retain_to_unlearn_ratio),
@@ -516,6 +516,7 @@ def set_wandb_env(args):
     os.environ["WANDB_MODE"] = args.wandb_mode
     os.environ["WANDB_RUN_ID"] = args.wandb_run_name
     os.environ["WANDB_NAME"] = args.wandb_run_name
+
 
 def train_main(args):
     logging_dir = Path(args.output_dir, args.logging_dir)
@@ -726,7 +727,7 @@ def train_main(args):
 
     def get_timestep_weight(timesteps: torch.Tensor, timestep_weights: List[float], max_timestep=999):
         n = len(timestep_weights)
-        interval_width = (max_timestep + 1) / n  # 加1是为了包含999
+        interval_width = (max_timestep + 1) / n
         indices = torch.clamp((timesteps / interval_width).long(), 0, n - 1).to(timesteps.device)
         weights = torch.tensor(timestep_weights).to(timesteps.device)
         return weights[indices]
@@ -804,19 +805,16 @@ def train_main(args):
                     )
 
                 layer_num = len(intermediate_outputs)
-                # 不同时间步使用不同权重
                 # timestep_weight = get_timestep_weight(timesteps, [0.2, 0.4, 0.6, 0.8, 0.8, 0.9, 0.9, 1.0, 1.0, 1.0], max_timestep=max_timestep-1)
                 timestep_weight = get_timestep_weight(timesteps, [(1 - a).sqrt().item() for a in noise_scheduler.alphas_cumprod], max_timestep=max_timestep-1)
                 # timestep_weight = get_timestep_weight(timesteps, [1], max_timestep=max_timestep-1)
 
-                # 中间层损失
                 unlearn_intermediate_loss = 0.0
                 retain_intermediate_loss = 0.0
 
                 layer_weights = [0.16, 0.16, 0.17, 0.21, 0.36, 0.39, 0.46, 0.59, 1.0]
                 for level, (output, origin_output, origin_unlearn_output) in enumerate(zip(intermediate_outputs, origin_target_intermediate_outputs, origin_unlearn_source_intermediate_outputs)):
                     if unlearn.sum():
-                        # 不同中间层使用不同权重
                         # layer_weight = (level + 1) / layer_num
                         layer_weight = layer_weights[level]
                         unlearn_target_loss = F.mse_loss(output[unlearn], origin_output[unlearn], reduction="none")
